@@ -131,17 +131,8 @@ class AHTxx
 {
   public:
 
-   AHTxx(uint8_t address = AHTXX_ADDRESS_X38, AHTXX_I2C_SENSOR = AHT1x_SENSOR);
-
-  #if defined (__AVR__)
-   bool     begin(uint32_t speed = AHTXX_I2C_SPEED_100KHZ, uint32_t stretch = AHTXX_I2C_STRETCH_USEC);
-  #elif defined (ESP8266) || defined (ESP32)
-   bool     begin(uint8_t sda = SDA, uint8_t scl = SCL, uint32_t speed = AHTXX_I2C_SPEED_100KHZ, uint32_t stretch = AHTXX_I2C_STRETCH_USEC);
-  #elif defined (_VARIANT_ARDUINO_STM32_)
-   bool     begin(uint8_t sda = SDA, uint8_t scl = SCL, uint32_t speed = AHTXX_I2C_SPEED_100KHZ);
-  #else
+   AHTxx(uint8_t address = AHTXX_ADDRESS_X38, AHTXX_I2C_SENSOR = AHT1x_SENSOR, TwoWire *theWire = NULL);
    bool     begin();
-  #endif
 
    float    readHumidity(bool readAHT = AHTXX_FORCE_READ_DATA);
    float    readTemperature(bool readAHT = AHTXX_FORCE_READ_DATA);
@@ -154,13 +145,14 @@ class AHTxx
 
 
   private:
+   TwoWire *_theWire;
    AHTXX_I2C_SENSOR _sensorType;
    uint8_t          _address;
    uint8_t          _status;
    uint8_t          _rawData[7] = {0, 0, 0, 0, 0, 0, 0}; //{status, RH, RH, RH+T, T, T, CRC}, CRC for AHT2x only
 
    void     _readMeasurement();
-   bool     _setInitializationRegister(uint8_t value); 
+   bool     _setInitializationRegister(uint8_t value);
    uint8_t  _readStatusRegister();
    uint8_t  _getCalibration();
    uint8_t  _getBusy(bool readAHT = AHTXX_FORCE_READ_DATA);

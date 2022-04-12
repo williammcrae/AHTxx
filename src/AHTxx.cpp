@@ -36,7 +36,7 @@
                                               see https://github.com/stm32duino/wiki/wiki/API#i2c
                                             **most boards has 10K..12K pullup-up resistor
                                               on GPIO0/D3, GPIO2/D4/LED & pullup-down on
-                                              GPIO15/D8 for flash & boot 
+                                              GPIO15/D8 for flash & boot
 
    Frameworks & Libraries:
    ATtiny  Core - https://github.com/SpenceKonde/ATTinyCore
@@ -58,11 +58,12 @@
     Constructor
 */
 /**************************************************************************/
-AHTxx::AHTxx(uint8_t address, AHTXX_I2C_SENSOR sensorType)
+AHTxx::AHTxx(uint8_t address, AHTXX_I2C_SENSOR sensorType, TwoWire *theWire)
 {
   _address    = address;
   _sensorType = sensorType;
   _status     = AHTXX_NO_ERROR;
+  _theWire    = theWire;
 }
 
 /**************************************************************************/
@@ -83,43 +84,9 @@ AHTxx::AHTxx(uint8_t address, AHTXX_I2C_SENSOR sensorType)
       - 4 other error
 */
 /**************************************************************************/
-#if defined (__AVR__)
-bool AHTxx::begin(uint32_t speed, uint32_t stretch)
-{
-  Wire.begin();
 
-  Wire.setClock(speed);                //experimental! AVR I2C bus speed 31kHz..400kHz, default 100000Hz
-
-  Wire.setWireTimeout(stretch, false); //experimental! default 25000usec, true-Wire hardware will be automatically reset on timeout
-
-#elif defined (ESP8266) || defined (ESP32)
-bool AHTxx::begin(uint8_t sda, uint8_t scl, uint32_t speed, uint32_t stretch)
-{
-  Wire.begin(sda, scl);
-
-  Wire.setClock(speed);               //experimental! ESP8266 I2C bus speed 1kHz..400kHz, default 100000Hz
-
-  #if defined (ESP8266)
-  Wire.setClockStretchLimit(stretch); //experimental! default 150000usec
-  #else
-  Wire.setTimeout(stretch / 1000);    //experimental! default 50msec
-  #endif
-
-#elif defined (_VARIANT_ARDUINO_STM32_)
-bool AHTxx::begin(uint8_t sda, uint8_t scl, uint32_t speed)
-{
-  Wire.begin(sda, scl);
-
-  Wire.setClock(speed);               //experimental! STM32 I2C bus speed ???kHz..400kHz, default 100000Hz
-
-#else
-bool AHTxx::begin()
-{
-  Wire.begin();
-#endif
-
+bool AHTxx::begin() {
   delay(AHT2X_POWER_ON_DELAY); //wait for sensor to initialize
-
   return softReset();          //soft reset is recommended at start (reset, set normal mode, set calibration bit & check calibration bit)
 }
 
@@ -170,7 +137,7 @@ float AHTxx::readHumidity(bool readAHT)
 /*
     readTemperature()
 
-    Read temperature, in C 
+    Read temperature, in C
 
     NOTE:
     - temperature range........ -40C..+85C
@@ -201,8 +168,8 @@ float AHTxx::readTemperature(bool readAHT)
 
 /**************************************************************************/
 /*
-    setNormalMode()  
- 
+    setNormalMode()
+
     Set normal measurement mode
 
     NOTE:
@@ -218,8 +185,8 @@ bool AHTxx::setNormalMode()
 
 /**************************************************************************/
 /*
-    setCycleMode()  
- 
+    setCycleMode()
+
     Set cycle measurement mode
 
     NOTE:
@@ -235,8 +202,8 @@ bool AHTxx::setCycleMode()
 
 /**************************************************************************/
 /*
-    setComandMode()  
- 
+    setComandMode()
+
     Set command measurement mode
 
     NOTE:
@@ -252,8 +219,8 @@ bool AHTxx::setComandMode()
 
 /**************************************************************************/
 /*
-    softReset()  
- 
+    softReset()
+
     Restart sensor, without power off
 
     NOTE:
@@ -263,11 +230,11 @@ bool AHTxx::setComandMode()
 /**************************************************************************/
 bool AHTxx::softReset()
 {
-  Wire.beginTransmission(_address);
+  _theWire->beginTransmission(_address);
 
-  Wire.write(AHTXX_SOFT_RESET_REG);
+  _theWire->write(AHTXX_SOFT_RESET_REG);
 
-  if (Wire.endTransmission(true) != 0) {return false;}                                   //collision on I2C bus, sensor didn't return ACK
+  if (_theWire->endTransmission(true) != 0) {return false;}                                   //collision on I2C bus, sensor didn't return ACK
 
   delay(AHTXX_SOFT_RESET_DELAY);
 
@@ -277,8 +244,8 @@ bool AHTxx::softReset()
 
 /**************************************************************************/
 /*
-    getStatus()  
- 
+    getStatus()
+
     Return sensor status
 
     NOTE:
@@ -298,8 +265,8 @@ uint8_t AHTxx::getStatus()
 
 /**************************************************************************/
 /*
-    setType()  
- 
+    setType()
+
     Set sensor type on the fly
 
     NOTE:
@@ -333,13 +300,13 @@ void AHTxx::setType(AHTXX_I2C_SENSOR sensorType)
 void AHTxx::_readMeasurement()
 {
   /* send measurement command */
-  Wire.beginTransmission(_address);
+  _theWire->beginTransmission(_address);
 
-  Wire.write(AHTXX_START_MEASUREMENT_REG);      //send measurement command, strat measurement
-  Wire.write(AHTXX_START_MEASUREMENT_CTRL);     //send measurement control
-  Wire.write(AHTXX_START_MEASUREMENT_CTRL_NOP); //send measurement NOP control
+  _theWire->write(AHTXX_START_MEASUREMENT_REG);      //send measurement command, strat measurement
+  _theWire->write(AHTXX_START_MEASUREMENT_CTRL);     //send measurement control
+  _theWire->write(AHTXX_START_MEASUREMENT_CTRL_NOP); //send measurement NOP control
 
-  if (Wire.endTransmission(true) != 0)          //collision on I2C bus
+  if (_theWire->endTransmission(true) != 0)          //collision on I2C bus
   {
     _status = AHTXX_ACK_ERROR;                  //update status byte, sensor didn't return ACK
 
@@ -358,9 +325,9 @@ void AHTxx::_readMeasurement()
   if   (_sensorType == AHT1x_SENSOR) {dataSize = 6;}   //{status, RH, RH, RH+T, T, T, CRC*}, *CRC for AHT2x only
   else                               {dataSize = 7;}
 
-  Wire.requestFrom(_address, dataSize, (uint8_t)true); //read n-byte to "wire.h" rxBuffer, true-send stop after transmission
+  _theWire->requestFrom(_address, dataSize, (uint8_t)true); //read n-byte to "wire.h" rxBuffer, true-send stop after transmission
 
-  if (Wire.available() != dataSize)
+  if (_theWire->available() != dataSize)
   {
     _status = AHTXX_DATA_ERROR;                        //update status byte, received data smaller than expected
 
@@ -370,7 +337,7 @@ void AHTxx::_readMeasurement()
   /* read n-bytes from "wire.h" rxBuffer */
   for (uint8_t i = 0; i < dataSize; i++)
   {
-    _rawData[i] = Wire.read();
+    _rawData[i] = _theWire->read();
   }
 
   /* check busy bit after measurement dalay */
@@ -386,7 +353,7 @@ void AHTxx::_readMeasurement()
 /**************************************************************************/
 /*
     _setInitializationRegister()
- 
+
     Set initialization register
 
     NOTE:
@@ -397,15 +364,15 @@ bool AHTxx::_setInitializationRegister(uint8_t value)
 {
   delay(AHTXX_CMD_DELAY);
 
-  Wire.beginTransmission(_address);
+  _theWire->beginTransmission(_address);
 
-  if   (_sensorType == AHT1x_SENSOR) {Wire.write(AHT1X_INIT_REG);} //send initialization command, for AHT1x only
-  else                               {Wire.write(AHT2X_INIT_REG);} //send initialization command, for AHT2x only
+  if   (_sensorType == AHT1x_SENSOR) {_theWire->write(AHT1X_INIT_REG);} //send initialization command, for AHT1x only
+  else                               {_theWire->write(AHT2X_INIT_REG);} //send initialization command, for AHT2x only
 
-  Wire.write(value);                                               //send initialization register controls
-  Wire.write(AHTXX_INIT_CTRL_NOP);                                 //send initialization register NOP control
+  _theWire->write(value);                                               //send initialization register controls
+  _theWire->write(AHTXX_INIT_CTRL_NOP);                                 //send initialization register NOP control
 
-  return (Wire.endTransmission(true) == 0);                        //true=success, false=I2C error
+  return (_theWire->endTransmission(true) == 0);                        //true=success, false=I2C error
 }
 
 
@@ -441,15 +408,15 @@ uint8_t AHTxx::_readStatusRegister()
 {
   delay(AHTXX_CMD_DELAY);
 
-  Wire.beginTransmission(_address);
+  _theWire->beginTransmission(_address);
 
-  Wire.write(AHTXX_STATUS_REG);
+  _theWire->write(AHTXX_STATUS_REG);
 
-  if (Wire.endTransmission(true) != 0) {return AHTXX_ERROR;} //collision on I2C bus, sensor didn't return ACK
+  if (_theWire->endTransmission(true) != 0) {return AHTXX_ERROR;} //collision on I2C bus, sensor didn't return ACK
 
-  Wire.requestFrom(_address, (uint8_t)1, (uint8_t)true);     //read 1-byte to "wire.h" rxBuffer, true-send stop after transmission
+  _theWire->requestFrom(_address, (uint8_t)1, (uint8_t)true);     //read 1-byte to "wire.h" rxBuffer, true-send stop after transmission
 
-  if (Wire.available() == 1) {return Wire.read();}           //read 1-byte from "wire.h" rxBuffer
+  if (_theWire->available() == 1) {return _theWire->read();}           //read 1-byte from "wire.h" rxBuffer
                               return AHTXX_ERROR;            //collision on I2C bus, "wire.h" rxBuffer is empty
 }
 
@@ -492,11 +459,11 @@ uint8_t AHTxx::_getBusy(bool readAHT)
   {
     delay(AHTXX_CMD_DELAY);
 
-    Wire.requestFrom(_address, (uint8_t)1, (uint8_t)true); //read 1-byte to "wire.h" rxBuffer, true-send stop after transmission
+    _theWire->requestFrom(_address, (uint8_t)1, (uint8_t)true); //read 1-byte to "wire.h" rxBuffer, true-send stop after transmission
 
-    if (Wire.available() != 1) {return AHTXX_DATA_ERROR;}  //no reason to continue, "return" terminates the entire function & "break" just exits the loop
+    if (_theWire->available() != 1) {return AHTXX_DATA_ERROR;}  //no reason to continue, "return" terminates the entire function & "break" just exits the loop
 
-    _rawData[0] = Wire.read();                             //read 1-byte from "wire.h" rxBuffer
+    _rawData[0] = _theWire->read();                             //read 1-byte from "wire.h" rxBuffer
   }
 
   if   ((_rawData[0] & AHTXX_STATUS_CTRL_BUSY) == AHTXX_STATUS_CTRL_BUSY) {_status = AHTXX_BUSY_ERROR;} //0x80=busy, 0x00=measurement completed
@@ -530,7 +497,7 @@ bool AHTxx::_checkCRC8()
 
       for(uint8_t bitIndex = 8; bitIndex > 0; --bitIndex)    //8-bits in byte
       {
-        if   (crc & 0x80) {crc = (crc << 1) ^ 0x31;}         //0x31=CRC seed/polynomial 
+        if   (crc & 0x80) {crc = (crc << 1) ^ 0x31;}         //0x31=CRC seed/polynomial
         else              {crc = (crc << 1);}
       }
     }
